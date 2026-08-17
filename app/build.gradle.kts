@@ -106,10 +106,10 @@ android {
     flavorDimensions += "vendor"
     productFlavors {
         create("play") {
-            minSdk = 23
+            minSdk = 24
         }
         create("other") {
-            minSdk = 23
+            minSdk = 24
         }
         create("otherLegacy") {
             minSdk = 21
