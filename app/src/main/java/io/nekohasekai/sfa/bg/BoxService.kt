@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.bg
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -52,6 +53,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     companion object {
         private const val PROFILE_UPDATE_INTERVAL = 15L * 60 * 1000 // 15 minutes in milliseconds
         private const val TAG = "BoxService"
+        private const val LOCAL_NETWORK_PERMISSION_CHANNEL = "local_network_permission"
+        private const val LOCAL_NETWORK_PERMISSION_NOTIFICATION_ID = 4
 
         @OptIn(DelicateCoroutinesApi::class)
         fun start() = GlobalScope.launch(Dispatchers.Main.immediate) {
@@ -188,6 +191,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 notification.show(lastProfileName, R.string.status_started)
             }
             notification.start()
+            notifyMissingLocalNetworkPermission()
         } catch (e: Exception) {
             stopAndAlert(Alert.StartService, e.message)
             return
@@ -437,6 +441,48 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 )
             }
             Application.notification.notify(notification.identifier, notification.typeID, builder.build())
+        }
+    }
+
+    // Starts that bypass MainActivity (boot, quick settings tile, always-on VPN)
+    // never get the runtime request, and Android 17 silently drops this app's
+    // LAN traffic without it, so surface the missing grant here instead.
+    @SuppressLint("NewApi")
+    private fun notifyMissingLocalNetworkPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN ||
+            service.hasPermission(android.Manifest.permission.ACCESS_LOCAL_NETWORK)
+        ) {
+            return
+        }
+        val title = service.getString(R.string.local_network_permission_title)
+        val description = service.getString(R.string.local_network_permission_description)
+        val builder =
+            NotificationCompat.Builder(service, LOCAL_NETWORK_PERMISSION_CHANNEL)
+                .setContentTitle(title).setContentText(description)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(description))
+                .setSmallIcon(R.drawable.ic_menu)
+                .setCategory(NotificationCompat.CATEGORY_ERROR)
+                .setOnlyAlertOnce(true).setAutoCancel(true)
+                .setContentIntent(
+                    PendingIntent.getActivity(
+                        service,
+                        0,
+                        Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", service.packageName, null),
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        ServiceNotification.flags,
+                    ),
+                )
+        GlobalScope.launch(Dispatchers.Main) {
+            Application.notification.createNotificationChannel(
+                NotificationChannel(
+                    LOCAL_NETWORK_PERMISSION_CHANNEL,
+                    title,
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ),
+            )
+            Application.notification.notify(LOCAL_NETWORK_PERMISSION_NOTIFICATION_ID, builder.build())
         }
     }
 
